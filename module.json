@@ -8,23 +8,13 @@
   "version": "0.5.4",
 	"socket": true,
   "compatibility": {
-      "minimum": "10",
-      "verified": "11"
+      "minimum": "12",
+      "verified": "12"
     },
 	"socket": true,
   "scripts": ["card-tokens.js"],
   "relationships": {
       "requires": [
-          {
-              "id": "warpgate",
-              "type": "module",
-              "manifest": "https://github.com/trioderegion/warpgate/releases/latest/download/module.json",
-              "compatibility": {
-                  "minimum": "1.12.1",
-                  "verified": "1.15.x",
-                  "maximum": "2"
-              }
-          },
 					{
               "id": "socketlib",
               "type": "module",

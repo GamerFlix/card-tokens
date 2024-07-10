@@ -1,12 +1,35 @@
 var createCardToken = async function(data, userId) {
+  console.warn("Creating card token")
   let card = fromUuidSync(data.uuid);
   let src = data.src;
   let actor = game.actors.find(a=>a.flags.world?.card==card.uuid);
   let drawing = canvas.scene.drawings.find(d=>d.text==card.parent.name);
   if (drawing) data = {...data, ...drawing.object.center}
-  if (actor) return warpgate.spawnAt(data, await actor.getTokenDocument(), {token:{texture:{src}, rotation:data.rotation+actor.prototypeToken.texture.rotation}});
+
+  
+
+  if (actor){
+    const tokenDocData = await actor.getTokenDocument().toObject()
+    return canvas.scene.createEmbeddedDocuments("Token",[
+      {
+        ...tokenDocData,
+        x:data.y,
+        y:data.y,
+        token:{texture:{src}, rotation:data.rotation+actor.prototypeToken.texture.rotation}
+      }
+    ])
+  }
+
   Hooks.once('createActor', async (actor)=>{ 
-    warpgate.spawnAt(data, await actor.getTokenDocument(), {token:{texture:{src}, rotation:data.rotation+actor.prototypeToken.texture.rotation}}, {}, {collision:!!drawing}) 
+    const tokenDocData = await actor.getTokenDocument().toObject()
+    canvas.scene.createEmbeddedDocuments("Token",[
+      {
+        ...tokenDocData,
+        x:data.y,
+        y:data.y,
+        token:{texture:{src}, rotation:data.rotation+actor.prototypeToken.texture.rotation}
+      }
+    ])
   })
 
 }
@@ -26,6 +49,9 @@ Hooks.on('canvasReady', (canvas)=>{
     let dz = ( event.delta < 0 ) ? 1.05 : 0.95;
     this.pan({scale: dz * canvas.stage.scale.x});
     return
+    
+    //why does the code below exist? It is never reached
+
     const scale = dz * canvas.stage.scale.x
     const d = canvas.dimensions
     const max = CONFIG.Canvas.maxZoom
@@ -76,6 +102,7 @@ Hooks.on('preUpdateToken',  (token, update, options) =>{
 });
 
 Hooks.once("socketlib.ready", () => {
+  console.warn("Registered socket lib")
 	window.socketForCardTokens = socketlib.registerModule("card-tokens");
 	window.socketForCardTokens.register("createCardToken", createCardToken);
 });
@@ -128,16 +155,16 @@ Hooks.on('renderTokenHUD', (app, html, hudData)=>{
   }
 });
 
-Hooks.on('deleteActor', async (actor)=>{
-  if (!warpgate.util.isFirstGM()) return;
+Hooks.on('deleteActor', async (actor,data,options,userId)=>{
+  if (!game.users.activeGM.isSelf) return;
   if (!actor.flags.world?.card) return;
   game.scenes.map(s=>{return s.deleteEmbeddedDocuments("Token", s.tokens.filter(i=>i.actorId==actor.id).map(t=>t.id))})
 });
 
-Hooks.on('preCreateActor', async (actor)=>{
+Hooks.on('preCreateActor', (actor,data,options,userId)=>{
   if (game.system.id != "dnd5e") return;
   if (!actor.flags.world?.card) return;
-  let card = await fromUuid(actor.flags.world?.card)
+  let card = fromUuidSync(actor.flags.world?.card)
   actor.updateSource({prototypeToken: {
       height: card.height || game.settings.get("card-tokens", "height"), 
       width: card.width || game.settings.get("card-tokens", "width")
@@ -145,7 +172,7 @@ Hooks.on('preCreateActor', async (actor)=>{
 });
 
 Hooks.on('createCard', async (card, options, user)=>{
-  if (!warpgate.util.isFirstGM()) return;
+  if (!game.users.activeGM.isSelf) return;
   if (card.parent.type=="deck") return;
   let folder = game.folders.find(f=>f.name==card.parent.name&&f.type=="Actor");
   if (!folder) createFolderDebounce({type:'Actor', name: card.parent.name, flags:{world:{cards:card.parent.uuid}}})
@@ -153,7 +180,7 @@ Hooks.on('createCard', async (card, options, user)=>{
   if (!actor) actor = await Actor.create({
     img: card.faces[card.face]?.img || card.faces[0]?.img, 
     name: card.name, 
-    type: Object.entries(game.system.model.Actor).filter((k,v)=>v).map(([k,v])=>k)[0], 
+    type: Object.values(CONFIG.Actor.documentClass.TYPES).find(i=>i!=="base"), 
     ownership: card.parent.ownership,
     folder: folder?.id || null,
     prototypeToken: {
@@ -177,7 +204,7 @@ Hooks.on('createCard', async (card, options, user)=>{
 })
 
 Hooks.on('updateCard', async (card, update, options, user)=>{
-  if (!warpgate.util.isFirstGM()) return;
+  if (!game.users.activeGM.isSelf) return;
   if (!update.hasOwnProperty('face')) return;
   let actor = game.actors.find(a=>a.flags.world?.card==card.uuid);
   if (!actor) return;
@@ -186,7 +213,7 @@ Hooks.on('updateCard', async (card, update, options, user)=>{
 })
 
 Hooks.on('deleteCard', async (card, options, user)=>{
-  if (!warpgate.util.isFirstGM()) return;
+  if (!game.users.activeGM.isSelf) return;
   await Actor.deleteDocuments(game.actors.filter(a=>a.flags.world?.card==card.uuid).map(c=>c._id))
   
   let folder = game.folders.find(f=>f.name==card.parent.name&&f.type=="Actor");
@@ -198,7 +225,7 @@ Hooks.on('deleteCard', async (card, options, user)=>{
 var createFolderDebounce = foundry.utils.debounce((data)=> { Folder.create(data) }, 500);
 
 Hooks.on('createFolder', (folder)=>{
-  if (!warpgate.util.isFirstGM()) return;
+  if (!game.users.activeGM.isSelf) return;
   if (folder.type!="Actor") return;
   if (!folder.flags.world?.cards) return;
   Actor.updateDocuments(game.actors.filter(a=>a.flags.world?.card?.includes(folder.flags.world?.cards) && !a.folder).map(a=>{return {_id:a.id, folder:folder.id} }))
